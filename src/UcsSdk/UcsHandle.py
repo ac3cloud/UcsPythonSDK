@@ -136,7 +136,6 @@ class UcsHandle:
 		from Ucs import ConfigConfig, Pair, ConfigMap
 		from MoMeta import _ManagedObjectMeta
 		from MethodMeta import _MethodFactoryMeta
-
 		if ((self._transactionInProgress == True) and (
 					method.propMoMeta.xmlAttribute in [NamingId.CONFIG_CONF_MO, NamingId.CONFIG_CONF_MOS])):
 			if (method.propMoMeta.xmlAttribute == NamingId.CONFIG_CONF_MO):
@@ -144,7 +143,6 @@ class UcsHandle:
 				ccmResponse = ExternalMethod(NamingId.CONFIG_CONF_MO)
 				ccmResponse.setattr("Dn", ccm.Dn)
 				ccmResponse.InConfig = ConfigConfig()
-
 				pair = Pair()
 				pair.Key = ccm.Dn
 				for mo in ccm.InConfig.GetChild():
@@ -166,7 +164,6 @@ class UcsHandle:
 				ccm = method
 				ccmResponse = ExternalMethod(NamingId.CONFIG_CONF_MOS)
 				ccmResponse.InConfigs = ConfigMap()
-
 				for pair in ccm.InConfigs.GetChild():
 					if (isinstance(pair, Pair) == True):
 						self._configMap.AddChild(pair.Clone())
@@ -184,9 +181,25 @@ class UcsHandle:
 			try:
 				if (dumpXml == None):
 					dumpXml = self._dumpXml
-
 				w = xml.dom.minidom.Document()
 				w.appendChild(method.WriteXml(w, options))
+                                # begin elmo hack
+                                cacheFile = ""
+                                element = w.getElementsByTagName("configResolveClass")
+                                if element and element[0].hasAttribute('classId'):
+                                    cacheFile = element[0].getAttribute('classId')
+                                element = w.getElementsByTagName("wcard")
+                                if element and element[0].hasAttribute('class'):
+                                    cacheFile = cacheFile + "-" + element[0].getAttribute('class')
+                                if element and element[0].hasAttribute('property'):
+                                    cacheFile = cacheFile + "-" + element[0].getAttribute('property')
+                                if element and element[0].hasAttribute('value'):
+                                    cacheFile = cacheFile + "-" + element[0].getAttribute('value')
+# dns
+                                element = w.getElementsByTagName("dn")
+                                if element and element[0].hasAttribute('value'):
+                                    cacheFile = element[0].getAttribute('value')
+                                cacheFile = cacheFile.replace('/', '-')
 				uri = self.Uri() + '/nuova'
 				if (dumpXml in _AffirmativeList):
 					print '%s ====> %s' % (self._ucs, w.toxml())
@@ -208,9 +221,19 @@ class UcsHandle:
 							# print "status code is:",f[0]
 							# print "location is:", f[1]
 					else:
-						req = urllib2.Request(url=uri, data=w.toxml())
+					        if cacheFile != "" and os.path.isfile("/tmp/" + cacheFile):
+                                                    mtime = os.path.getmtime("/tmp/" + cacheFile)
+                                                    diff = int(time.time())-int(mtime)
+                                                    if diff < 900: #elmo
+                                                        f = open("/tmp/" + cacheFile, "r")
+                                                        response = ExternalMethod(method.propMoMeta.name)
+                                                        doc = parseString(f.read())
+                                                        response.LoadFromXml(doc.childNodes[0], self)
+                                                        return response
+                                                req = urllib2.Request(url=uri, data=w.toxml())
 						opener = urllib2.build_opener()
 						f = opener.open(req)
+                                                #print f.read()
 					# f = urllib2.urlopen(req)
 				else:
 
@@ -240,8 +263,11 @@ class UcsHandle:
 				rsp = f.read()
 				if (dumpXml in _AffirmativeList):
 					print '%s <==== %s' % (self._ucs, rsp)
-
-				# method = method.propMoMeta.name
+                                if cacheFile != "":
+                                    f = open("/tmp/" + cacheFile, "w+")
+                                    f.write(rsp)
+                                    f.close()
+                                # method = method.propMoMeta.name
 				response = ExternalMethod(method.propMoMeta.name)
 				doc = parseString(rsp)
 				response.LoadFromXml(doc.childNodes[0], self)
